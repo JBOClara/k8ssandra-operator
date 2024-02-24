@@ -120,11 +120,11 @@ scrape_interval_secs = {{ .ScrapeInterval }}
 	if err != nil {
 		panic(err)
 	}
-	vectorToml := new(bytes.Buffer)
-	err = t.Execute(vectorToml, config)
+	vectorYaml := new(bytes.Buffer)
+	err = t.Execute(vectorYaml, config)
 	if err != nil {
 		panic(err)
 	}
 
-	return vectorToml.String(), nil
+	return vectorYaml.String(), nil
 }
