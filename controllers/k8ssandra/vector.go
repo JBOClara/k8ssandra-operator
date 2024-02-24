@@ -31,13 +31,13 @@ func (r *K8ssandraClusterReconciler) reconcileVector(
 		Name:      telemetry.VectorAgentConfigMapName(kc.SanitizedName(), dcConfig.CassDcName()),
 	}
 	if kc.Spec.Cassandra.Telemetry.IsVectorEnabled() {
-		// Create the vector toml config content
-		toml, err := telemetry.CreateCassandraVectorToml(kc.Spec.Cassandra.Telemetry, dcConfig.McacEnabled)
+		// Create the vector yaml config content
+		yaml, err := telemetry.CreateCassandraVectorYaml(kc.Spec.Cassandra.Telemetry, dcConfig.McacEnabled)
 		if err != nil {
 			return result.Error(err)
 		}
 
-		desiredVectorConfigMap := telemetry.BuildVectorAgentConfigMap(namespace, kc.SanitizedName(), dcConfig.CassDcName(), kc.Namespace, toml)
+		desiredVectorConfigMap := telemetry.BuildVectorAgentConfigMap(namespace, kc.SanitizedName(), dcConfig.CassDcName(), kc.Namespace, yaml)
 		k8ssandralabels.SetWatchedByK8ssandraCluster(desiredVectorConfigMap, kcKey)
 
 		// Check if the vector config map already exists

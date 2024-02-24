@@ -2,10 +2,11 @@ package telemetry
 
 import (
 	"fmt"
+	"strings"
+
 	"github.com/k8ssandra/k8ssandra-operator/pkg/labels"
 	"github.com/k8ssandra/k8ssandra-operator/pkg/utils"
 	"sigs.k8s.io/controller-runtime/pkg/client"
-	"strings"
 
 	"github.com/go-logr/logr"
 	cassdcapi "github.com/k8ssandra/cass-operator/apis/cassandra/v1beta1"
@@ -55,7 +56,7 @@ func InjectCassandraVectorAgentConfig(telemetrySpec *telemetry.TelemetrySpec, dc
 	return nil
 }
 
-func CreateCassandraVectorToml(telemetrySpec *telemetry.TelemetrySpec, mcacEnabled bool) (string, error) {
+func CreateCassandraVectorYaml(telemetrySpec *telemetry.TelemetrySpec, mcacEnabled bool) (string, error) {
 	var scrapePort int32
 	metricsEndpoint := ""
 	if mcacEnabled {
@@ -105,21 +106,25 @@ func BuildDefaultVectorComponents(config vector.VectorConfig) ([]telemetry.Vecto
 	systemLogInput := telemetry.VectorSourceSpec{
 		Name: "systemlog",
 		Type: "file",
-		Config: `include = [ "/var/log/cassandra/system.log" ]
-read_from = "beginning"
-fingerprint.strategy = "device_and_inode"
-[sources.systemlog.multiline]
-start_pattern = "^(INFO|WARN|ERROR|DEBUG|TRACE|FATAL)"
-condition_pattern = "^(INFO|WARN|ERROR|DEBUG|TRACE|FATAL)"
-mode = "halt_before"
-timeout_ms = 10000
+		Config: `include:
+		- "/var/log/cassandra/system.log"
+	  read_from: beginning
+	  fingerprint:
+		strategy: device_and_inode
+	  sources:
+		systemlog:
+		  multiline:
+			start_pattern: "^(INFO|WARN|ERROR|DEBUG|TRACE|FATAL)"
+			condition_pattern: "^(INFO|WARN|ERROR|DEBUG|TRACE|FATAL)"
+			mode: halt_before
+			timeout_ms: 10000
 `,
 	}
 
 	metricsInput := telemetry.VectorSourceSpec{
 		Name:   "cassandra_metrics_raw",
 		Type:   "prometheus_scrape",
-		Config: fmt.Sprintf("endpoints = [ \"http://localhost:%v%s\" ]\nscrape_interval_secs = %v", config.ScrapePort, config.ScrapeEndpoint, config.ScrapeInterval),
+		Config: fmt.Sprintf("endpoints:\n      - http://localhost:%v%v\n    scrape_interval_secs: %v\n", config.ScrapePort, config.ScrapeEndpoint, config.ScrapeInterval),
 	}
 
 	sources = append(sources, systemLogInput, metricsInput)
@@ -131,37 +136,36 @@ timeout_ms = 10000
 		Name:   "parse_cassandra_log",
 		Type:   "remap",
 		Inputs: []string{"systemlog"},
-		Config: `source = '''
-del(.source_type)
-. |= parse_groks!(.message, patterns: [
-  "%{LOGLEVEL:loglevel}\\s+\\[(?<thread>((.+)))\\]\\s+%{TIMESTAMP_ISO8601:timestamp}\\s+%{JAVACLASS:class}:%{NUMBER:line}\\s+-\\s+(?<message>(.+\\n?)+)",
-  ]
-)
-pod_name, err = get_env_var("POD_NAME")
-if err == null {
-  .pod_name = pod_name
-}
-node_name, err = get_env_var("NODE_NAME")
-if err == null {
-  .node_name = node_name
-}
-cluster, err = get_env_var("CLUSTER_NAME")
-if err == null {
-  .cluster = cluster
-}
-datacenter, err = get_env_var("DATACENTER_NAME")
-if err == null {
-  .datacenter = datacenter
-}
-rack, err = get_env_var("RACK_NAME")
-if err == null {
-  .rack = rack
-}
-namespace, err = get_env_var("NAMESPACE")
-if err == null {
-  .namespace = namespace
-}
-'''
+		Config: `source: |
+		del(.source_type)
+		. |= parse_groks!(.message, patterns: [
+		"%{LOGLEVEL:loglevel}\\s+\\[(?<thread>((.+)))\\]\\s+%{TIMESTAMP_ISO8601:timestamp}\\s+%{JAVACLASS:class}:%{NUMBER:line}\\s+-\\s+(?<message>(.+\\n?)+)",
+		]
+		)
+		pod_name, err = get_env_var("POD_NAME")
+		if err == null {
+		.pod_name = pod_name
+		}
+		node_name, err = get_env_var("NODE_NAME")
+		if err == null {
+		.node_name = node_name
+		}
+		cluster, err = get_env_var("CLUSTER_NAME")
+		if err == null {
+		.cluster = cluster
+		}
+		datacenter, err = get_env_var("DATACENTER_NAME")
+		if err == null {
+		.datacenter = datacenter
+		}
+		rack, err = get_env_var("RACK_NAME")
+		if err == null {
+		.rack = rack
+		}
+		namespace, err = get_env_var("NAMESPACE")
+		if err == null {
+		.namespace = namespace
+		}
 `,
 	}
 
@@ -172,12 +176,11 @@ if err == null {
 		Name:   "cassandra_metrics",
 		Type:   "remap",
 		Inputs: []string{"cassandra_metrics_raw"},
-		Config: `source = '''
-namespace, err = get_env_var("NAMESPACE")
-if err == null {
-  .tags.namespace = namespace
-}
-'''
+		Config: `source: |
+		namespace, err = get_env_var("NAMESPACE")
+		if err == null {
+		.tags.namespace = namespace
+		}
 `,
 	}
 
@@ -187,8 +190,9 @@ if err == null {
 		Name:   "console_log",
 		Type:   "console",
 		Inputs: []string{"systemlog"},
-		Config: `target = "stdout"
-encoding.codec = "text"
+		Config: `target: stdout
+encoding:
+	codec: text
 `,
 	}
 
@@ -310,7 +314,7 @@ func BuildCustomVectorToml(telemetrySpec *telemetry.TelemetrySpec) string {
 	return vectorConfigToml
 }
 
-func BuildVectorAgentConfigMap(namespace, k8cName, dcName, k8cNamespace, vectorToml string) *corev1.ConfigMap {
+func BuildVectorAgentConfigMap(namespace, k8cName, dcName, k8cNamespace, vectorYaml string) *corev1.ConfigMap {
 	return &corev1.ConfigMap{
 		ObjectMeta: metav1.ObjectMeta{
 			Name:      VectorAgentConfigMapName(k8cName, dcName),
@@ -324,7 +328,7 @@ func BuildVectorAgentConfigMap(namespace, k8cName, dcName, k8cNamespace, vectorT
 				labels.CleanedUpByLabels(client.ObjectKey{Namespace: k8cNamespace, Name: k8cName})),
 		},
 		Data: map[string]string{
-			"vector.toml": vectorToml,
+			"vector.toml": vectorYaml,
 		},
 	}
 }

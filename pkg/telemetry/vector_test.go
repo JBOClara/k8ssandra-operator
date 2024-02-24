@@ -42,9 +42,9 @@ func TestInjectCassandraVectorAgentConfig(t *testing.T) {
 func TestCreateCassandraVectorTomlDefault(t *testing.T) {
 	telemetrySpec := &telemetry.TelemetrySpec{Vector: &telemetry.VectorSpec{Enabled: pointer.Bool(true)}}
 
-	toml, err := CreateCassandraVectorToml(telemetrySpec, true)
+	toml, err := CreateCassandraVectorYaml(telemetrySpec, true)
 	if err != nil {
-		t.Errorf("CreateCassandraVectorToml() failed with %s", err)
+		t.Errorf("CreateCassandraVectorYaml() failed with %s", err)
 	}
 
 	assert.Contains(t, toml, "[sinks.console_log]")
@@ -65,18 +65,18 @@ func TestCreateCassandraVectorTomlMcacDisabled(t *testing.T) {
 			},
 		}}
 
-	toml, err := CreateCassandraVectorToml(telemetrySpec, false)
+	toml, err := CreateCassandraVectorYaml(telemetrySpec, false)
 	if err != nil {
-		t.Errorf("CreateCassandraVectorToml() failed with %s", err)
+		t.Errorf("CreateCassandraVectorYaml() failed with %s", err)
 	}
 
 	assert.Contains(t, toml, "http://localhost:9000/metrics")
 }
 
 func TestBuildVectorAgentConfigMap(t *testing.T) {
-	vectorToml := "Test"
-	vectorConfigMap := BuildVectorAgentConfigMap("k8ssandra-operator", "k8ssandra", "dc1", "k8ssandra-operator", vectorToml)
-	assert.Equal(t, vectorToml, vectorConfigMap.Data["vector.toml"])
+	vectorYaml := "Test"
+	vectorConfigMap := BuildVectorAgentConfigMap("k8ssandra-operator", "k8ssandra", "dc1", "k8ssandra-operator", vectorYaml)
+	assert.Equal(t, vectorYaml, vectorConfigMap.Data["vector.toml"])
 	assert.Equal(t, "k8ssandra-dc1-cass-vector", vectorConfigMap.Name)
 	assert.Equal(t, "k8ssandra-operator", vectorConfigMap.Namespace)
 }
@@ -248,7 +248,7 @@ encoding.codec = "text"
 
 `
 
-	output, err := CreateCassandraVectorToml(telemetrySpec, false)
+	output, err := CreateCassandraVectorYaml(telemetrySpec, false)
 	assert.NoError(err)
 	assert.Equal(expectedOutput, output)
 }

@@ -37,67 +37,77 @@ Telemetry settings can be configured at the cluster level and then overridden at
 
 The following content will be added automatically to the vector.toml file:
 
-```toml
-[sources.systemlog]
-type = "file"
-include = [ "/var/log/cassandra/system.log" ]
-read_from = "beginning"
-fingerprint.strategy = "device_and_inode"
-[sources.systemlog.multiline]
-start_pattern = "^(INFO|WARN|ERROR|DEBUG|TRACE|FATAL)"
-condition_pattern = "^(INFO|WARN|ERROR|DEBUG|TRACE|FATAL)"
-mode = "halt_before"
-timeout_ms = 10000
+```yaml
+sources:
+  systemlog:
+    type: file
+    include:
+      - /var/log/cassandra/system.log
+    read_from: beginning
+    fingerprint:
+      strategy: device_and_inode
+    multiline:
+      start_pattern: "^(INFO|WARN|ERROR|DEBUG|TRACE|FATAL)"
+      condition_pattern: "^(INFO|WARN|ERROR|DEBUG|TRACE|FATAL)"
+      mode: halt_before
+      timeout_ms: 10000
 
-[transforms.parse_cassandra_log]
-type = "remap"
-inputs = [ "systemlog" ]
-source = '''
-del(.source_type)
-. |= parse_groks!(.message, patterns: [
-  "%{LOGLEVEL:loglevel}\\s+\\[(?<thread>((.+)))\\]\\s+%{TIMESTAMP_ISO8601:timestamp}\\s+%{JAVACLASS:class}:%{NUMBER:line}\\s+-\\s+(?<message>(.+\\n?)+)",
+transforms:
+  parse_cassandra_log:
+    type: remap
+    inputs:
+      - systemlog
+    source: |
+        del(.source_type)
+        . |= parse_groks!(.message, patterns: [
+          "%{LOGLEVEL:loglevel}\\s+\\[(?<thread>((.+)))\\]\\s+%{TIMESTAMP_ISO8601:timestamp}\\s+%{JAVACLASS:class}:%{NUMBER:line}\\s+-\\s+(?<message>(.+\\n?)+)",
 
-[sources.cassandra_metrics_raw]
-type = "prometheus_scrape"
-endpoints = [ "http://localhost:{{ .ScrapePort }}" ]
-scrape_interval_secs = {{ .ScrapeInterval }}
+  cassandra_metrics:
+    type: remap
+    inputs:
+      - cassandra_metrics_raw
+    source: |
+        namespace, err = get_env_var("NAMESPACE")
+        if err == null {
+          .namespace = namespace
+        }
 
-[transforms.cassandra_metrics]
-type = "remap"
-inputs = ["cassandra_metrics_raw"]
-source = '''
-namespace, err = get_env_var("NAMESPACE")
-if err == null {
-  .namespace = namespace
-}
-'''
+sources:
+  cassandra_metrics_raw:
+    type: prometheus_scrape
+    endpoints:
+      - "http://localhost:{{ .ScrapePort }}"
+    scrape_interval_secs: {{ .ScrapeInterval }}
 
+sinks:
+  console_output:
+    type: console
+    inputs:
+      - cassandra_metrics
+    target: stdout
+    encoding:
+      codec: json
 
-[sinks.console_output]
-type = "console"
-inputs = ["cassandra_metrics"]
-target = "stdout"
-[sinks.console_output.encoding]
-codec = "json"    
+  prometheus:
+    type: prometheus_exporter
+    inputs:
+      - cassandra_metrics
 
-
-[sinks.prometheus]
-type = "prometheus_exporter"
-inputs = ["cassandra_metrics"]
-
-[sinks.console_log]
-type = "console"
-inputs = ["systemlog"]
-target = "stdout"
-encoding.codec = "text"
+  console_log:
+    type: console
+    inputs:
+      - systemlog
+    target: stdout
+    encoding:
+      codec: text
 ```
 
-The default options are always added to the configuration, but one may override them and if not used, they're automatically cleaned up (see next section).  
+The default options are always added to the configuration, but one may override them and if not used, they're automatically cleaned up (see next section).
 The `cassandra_metrics` transform adds the namespace of the datacenter to the exposed metrics and should be used as the input for any transform or sink that would modify or route the metrics to a remote system.
 
 ## Automated cleanup of unused sources
 
-If there are sources and transformers which are not used by any sinks, the operator will remove those when deploying the configuration. Thus, there's no need to remove the default provided parsing or metrics scraping - they will not consume any resources if there's no sink attached to them. 
+If there are sources and transformers which are not used by any sinks, the operator will remove those when deploying the configuration. Thus, there's no need to remove the default provided parsing or metrics scraping - they will not consume any resources if there's no sink attached to them.
 
 ## Predefined Vector sources
 
@@ -114,7 +124,7 @@ This transform will parse the Cassandra logs and extract the log level, thread, 
 To customize the Vector configuration, you can add [sources](https://vector.dev/docs/reference/configuration/sources/), [transforms](https://vector.dev/docs/reference/configuration/transforms/) and [sinks](https://vector.dev/docs/reference/configuration/sinks/) in a semi-structured way under `.spec.cassandra.telemetry.vector.components`, `.spec.reaper.telemetry.vector.components` and `.spec.stargate.telemetry.vector.components`:
 
 ```yaml
-cassandra:  
+cassandra:
   telemetry:
       vector:
         enabled: true
@@ -125,9 +135,10 @@ cassandra:
               inputs:
                 - cassandra_metrics
               config: |
-                target = "stdout"
-                [sinks.console_output.encoding]
-                codec = "json"
+                target: stdout
+                console_output:
+                  encoding:
+                    codec: json
         scrapeInterval: 30s
         resources:
           requests:
@@ -150,7 +161,7 @@ The above configuration should display the scraped Cassandra metrics in json for
 As an another example, to output the logs as json to the console, one could modify the configuration to following:
 
 ```yaml
-cassandra:  
+cassandra:
   telemetry:
       vector:
         enabled: true
@@ -161,9 +172,10 @@ cassandra:
               inputs:
                 - parse_cassandra_log
               config: |
-                target = "stdout"
-                [sinks.console_output.encoding]
-                codec = "json"
+                target: stdout
+                console_output:
+                  encoding:
+                    codec: json
         scrapeInterval: 30s
         resources:
           requests:
@@ -182,21 +194,26 @@ metadata:
   name: test-cass-vector
   namespace: k8ssandra-operator
 data:
-  vector.toml: |
-    [sources.systemlog]
-    type = "file"
-    include = [ "/var/log/cassandra/system.log" ]
-    read_from = "beginning"
-    fingerprint.strategy = "device_and_inode
-    [sources.systemlog.multiline]
-    start_pattern = "^(INFO|WARN|ERROR|DEBUG|TRACE|FATAL)"
-    condition_pattern = "^(INFO|WARN|ERROR|DEBUG|TRACE|FATAL)"
-    mode = "halt_before"
-    timeout_ms = 10000
-
-    [sinks.console]
-    type = "console"
-    inputs = ["systemlog"]
-    target = "stdout"
-    encoding.codec = "text"
+  vector.yaml: |
+    sources:
+      systemlog:
+        type: file
+        include:
+          - /var/log/cassandra/system.log
+        read_from: beginning
+        fingerprint:
+          strategy: device_and_inode
+        multiline:
+          start_pattern: "^(INFO|WARN|ERROR|DEBUG|TRACE|FATAL)"
+          condition_pattern: "^(INFO|WARN|ERROR|DEBUG|TRACE|FATAL)"
+          mode: halt_before
+          timeout_ms: 10000
+    sinks:
+      console:
+        type: console
+        inputs:
+          - systemlog
+        target: stdout
+        encoding:
+          codec: text
 ```

@@ -30,7 +30,7 @@ func VectorAgentConfigMapName(clusterName, dcName string) string {
 	return fmt.Sprintf("%s-%s-%s", cassdcapi.CleanupForKubernetes(clusterName), dcName, vectorConfigMap)
 }
 
-func CreateVectorConfigMap(namespace, vectorToml string, dc cassdcapi.CassandraDatacenter) *corev1.ConfigMap {
+func CreateVectorConfigMap(namespace, vectorYaml string, dc cassdcapi.CassandraDatacenter) *corev1.ConfigMap {
 	return &corev1.ConfigMap{
 		ObjectMeta: metav1.ObjectMeta{
 			Name:      VectorAgentConfigMapName(dc.Spec.ClusterName, dc.DatacenterName()),
@@ -44,7 +44,7 @@ func CreateVectorConfigMap(namespace, vectorToml string, dc cassdcapi.CassandraD
 				labels.CleanedUpByLabels(client.ObjectKey{Namespace: namespace, Name: dc.Labels[k8ssandra.K8ssandraClusterNameLabel]})),
 		},
 		Data: map[string]string{
-			"vector.toml": vectorToml,
+			"vector.toml": vectorYaml,
 		},
 	}
 }
